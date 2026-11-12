@@ -75,7 +75,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     wc.lpszClassName = L"ImageGridToolWindow";
     RegisterClassExW(&wc);
 
-    HWND hwnd = CreateWindowW(wc.lpszClassName, L"gridtool", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    HWND hwnd = CreateWindowW(wc.lpszClassName, L"Image Grid Tool", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                               1400, 900, nullptr, nullptr, hInstance, nullptr);
     if (!hwnd) return 1;
 

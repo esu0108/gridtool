@@ -2,8 +2,15 @@
 
 #include <Windows.h>
 
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "D3D12Context.h"
@@ -27,7 +34,36 @@ private:
         GpuTexture tex;
     };
 
+    // One batch of decoded thumbnails handed from the worker thread to the UI thread.
+    struct Chunk {
+        std::vector<std::string> names;             // UTF-8 file names (successfully decoded files only)
+        std::vector<std::vector<uint8_t>> pixels;   // parallel to names
+        size_t failed = 0;                          // files of this batch that could not be decoded
+    };
+
+    // State of one folder load. Worker side: everything atomic / under `mutex`. UI side: the plain fields.
+    struct LoadJob {
+        std::atomic<bool> enumerated{false};  // `total` is valid
+        std::atomic<size_t> total{0};
+        std::atomic<size_t> decoded{0};       // files finished (ok or failed) by the worker
+        std::atomic<bool> workerDone{false};
+        std::atomic<bool> truncated{false};   // folder had more images than free GPU descriptor slots
+        std::mutex mutex;
+        std::deque<Chunk> ready;              // guarded by `mutex`
+
+        size_t loaded = 0;                    // UI thread only
+        size_t failed = 0;                    // UI thread only
+        bool cancelled = false;               // UI thread only
+        std::jthread thread;                  // keep last: destroyed (stopped + joined) first
+    };
+
     void OpenFolder();
+    void StartLoad(const std::filesystem::path& dir);
+    void PumpLoading();                       // UI thread: uploads finished batches, finishes the job
+    void CancelLoad();
+    void FinishLoad(const char* error = nullptr);
+    static void LoadWorker(LoadJob& job, const std::filesystem::path& dir, size_t capacity, std::stop_token st);
+    void DrawLoadProgress();
     void ExportBmp();
     void DrawLeftPane();
     void DrawRightPane();
@@ -48,6 +84,8 @@ private:
     std::vector<int> cells_;
     int cols_ = 8;
     int rows_ = 8;
+
+    std::unique_ptr<LoadJob> job_;  // non-null while a folder is loading
 
     std::string status_;
     bool reqOpen_ = false;
