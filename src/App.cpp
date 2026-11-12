@@ -1,6 +1,7 @@
 #include "App.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <execution>
 #include <filesystem>
 #include <numeric>
@@ -101,6 +102,15 @@ void App::OpenFolder() {
         pool_.push_back(std::move(img));
     }
 
+    {
+        const TextureMemoryStats m = d3d_.GetTextureMemoryStats();
+        char buf[160];
+        std::snprintf(buf, sizeof(buf), "テクスチャVRAM: %.2f MB 確保 / %.2f MB 使用 (%u 枚, ヒープ %u)",
+                      static_cast<double>(m.blockBytes) / (1024.0 * 1024.0),
+                      static_cast<double>(m.allocationBytes) / (1024.0 * 1024.0), m.allocationCount, m.blockCount);
+        memInfo_ = buf;
+    }
+
     status_ = std::to_string(okIndex.size()) + " 枚読み込みました。";
     if (failed > 0) status_ += " (読み込み失敗: " + std::to_string(failed) + " 枚)";
     if (truncated) status_ += " (上限に達したため一部を読み込んでいません)";
@@ -169,6 +179,7 @@ void App::DrawLeftPane() {
     ImGui::SameLine();
     ImGui::TextDisabled("%d 枚", static_cast<int>(list_.size()));
     if (!folderLabel_.empty()) ImGui::TextWrapped("%s", folderLabel_.c_str());
+    if (!memInfo_.empty()) ImGui::TextDisabled("%s", memInfo_.c_str());
     ImGui::Separator();
 
     ImGui::BeginChild("list", ImVec2(0, 0), ImGuiChildFlags_None);

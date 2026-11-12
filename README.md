@@ -77,7 +77,7 @@ cmake --build build --config Release
 ## Dependencies
 
 This project uses the following libraries:
-
+- [D3D12 Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator) — VRAM allocation
 - [Dear ImGui](https://github.com/ocornut/imgui) — Immediate Mode GUI
 - [stb_image](https://github.com/nothings/stb) — Image loading
 - [stb_image_resize2](https://github.com/nothings/stb_image_resize) — Image resizing

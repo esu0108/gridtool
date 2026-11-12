@@ -30,6 +30,18 @@ bool D3D12Context::Init(HWND hwnd, UINT width, UINT height) {
     if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)))) return false;
     if (FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device_)))) return false;
 
+    // Memory allocator: sub-allocates textures from large shared heaps instead of one committed resource each.
+    {
+        ComPtr<IDXGIAdapter> adapter;
+        if (FAILED(factory->EnumAdapterByLuid(device_->GetAdapterLuid(), IID_PPV_ARGS(&adapter)))) return false;
+
+        D3D12MA::ALLOCATOR_DESC ad{};
+        ad.Flags = D3D12MA_RECOMMENDED_ALLOCATOR_FLAGS;
+        ad.pDevice = device_.Get();
+        ad.pAdapter = adapter.Get();
+        if (FAILED(D3D12MA::CreateAllocator(&ad, &allocator_))) return false;
+    }
+
     D3D12_COMMAND_QUEUE_DESC qd{};
     qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     if (FAILED(device_->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue_)))) return false;
@@ -92,6 +104,7 @@ void D3D12Context::Shutdown() {
     swap_.Reset();
     fence_.Reset();
     queue_.Reset();
+    allocator_.Reset();  // all D3D12MA allocations must be gone by now (App is destroyed before Shutdown)
     device_.Reset();
 }
 
@@ -206,8 +219,8 @@ bool D3D12Context::CreateTextures(const std::vector<const uint8_t*>& rgba, std::
         return false;
     }
 
-    D3D12_HEAP_PROPERTIES defaultHeap{};
-    defaultHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12MA::ALLOCATION_DESC allocDesc{};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC texDesc{};
     texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     texDesc.Width = kTexSize;
@@ -239,9 +252,9 @@ bool D3D12Context::CreateTextures(const std::vector<const uint8_t*>& rgba, std::
         t.srv = gpu;
         cpuHandles.push_back(cpu);
 
-        if (FAILED(device_->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &texDesc,
-                                                    D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                                    IID_PPV_ARGS(&t.resource)))) {
+        // Placed resource inside a shared heap block (4 KB-aligned for small textures when D3D12MA can prove it is allowed).
+        if (FAILED(allocator_->CreateResource(&allocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                              &t.allocation, IID_PPV_ARGS(&t.resource)))) {
             rollback();
             return false;
         }
@@ -281,6 +294,20 @@ bool D3D12Context::CreateTextures(const std::vector<const uint8_t*>& rgba, std::
 
     out = std::move(result);
     return true;
+}
+
+TextureMemoryStats D3D12Context::GetTextureMemoryStats() const {
+    TextureMemoryStats out;
+    if (!allocator_) return out;
+    D3D12MA::TotalStatistics stats{};
+    allocator_->CalculateStatistics(&stats);
+    // The upload buffer is a plain committed resource, so only textures are counted here.
+    const D3D12MA::Statistics& d = stats.HeapType[0].Stats;  // 0 = D3D12_HEAP_TYPE_DEFAULT
+    out.blockBytes = d.BlockBytes;
+    out.allocationBytes = d.AllocationBytes;
+    out.allocationCount = d.AllocationCount;
+    out.blockCount = d.BlockCount;
+    return out;
 }
 
 UINT D3D12Context::FreeSrvSlots() const {

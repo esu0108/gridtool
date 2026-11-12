@@ -42,6 +42,7 @@ private:
     std::vector<Image> pool_;  // every image ever loaded (grid cells refer to indices in here)
     std::vector<int> list_;    // images of the currently opened folder (indices into pool_)
     std::string folderLabel_;
+    std::string memInfo_;  // GPU texture memory summary (refreshed after each load)
 
     // Fixed kMaxGrid x kMaxGrid storage, so shrinking the visible grid does not lose placements.
     std::vector<int> cells_;

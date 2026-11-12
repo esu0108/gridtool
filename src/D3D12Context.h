@@ -5,13 +5,25 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
+#include "D3D12MemAlloc.h"
+
 #include <array>
 #include <cstdint>
 #include <vector>
 
 struct GpuTexture {
+    // Declared before `resource` so the resource is released first, then its memory is returned to D3D12MA.
+    Microsoft::WRL::ComPtr<D3D12MA::Allocation> allocation;
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
     D3D12_GPU_DESCRIPTOR_HANDLE srv{};
+};
+
+// Memory used by textures created through D3D12MA (small textures are sub-allocated from shared ID3D12Heap blocks).
+struct TextureMemoryStats {
+    UINT64 blockBytes = 0;       // ID3D12Heap memory actually reserved from D3D12
+    UINT64 allocationBytes = 0;  // portion of it occupied by textures
+    UINT allocationCount = 0;
+    UINT blockCount = 0;
 };
 
 // Minimal D3D12 device / swap chain wrapper plus helper for uploading 64x64 RGBA textures.
@@ -33,6 +45,9 @@ public:
 
     // Uploads N textures of kTexSize x kTexSize RGBA8 (tightly packed). Blocks until the GPU is done.
     bool CreateTextures(const std::vector<const uint8_t*>& rgba, std::vector<GpuTexture>& out);
+
+    // Slow-ish (walks all blocks): call after loading, not every frame.
+    TextureMemoryStats GetTextureMemoryStats() const;
 
     ID3D12Device* Device() const { return device_.Get(); }
     ID3D12CommandQueue* Queue() const { return queue_.Get(); }
@@ -56,6 +71,7 @@ private:
     };
 
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
+    Microsoft::WRL::ComPtr<D3D12MA::Allocator> allocator_;  // must be destroyed before device_ (declared after it)
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue_;
     Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;

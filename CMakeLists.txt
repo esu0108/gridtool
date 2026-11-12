@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(ImageGridTool LANGUAGES CXX)
+project(gridtool LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "This project targets Windows (DirectX 12) only.")
@@ -35,9 +35,19 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(imgui stb stb_resize)
+# AMD D3D12 Memory Allocator. Its own CMakeLists requires CMake 3.25 and builds a separate library, so we only
+# download it (SOURCE_SUBDIR points at a directory without a CMakeLists.txt) and compile D3D12MemAlloc.cpp ourselves.
+FetchContent_Declare(
+    d3d12ma
+    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git
+    GIT_TAG        v3.3.0
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  include
+)
 
-add_executable(ImageGridTool WIN32
+FetchContent_MakeAvailable(imgui stb stb_resize d3d12ma)
+
+add_executable(gridtool WIN32
     src/main.cpp
     src/App.cpp
     src/D3D12Context.cpp
@@ -45,6 +55,7 @@ add_executable(ImageGridTool WIN32
     src/Dialogs.cpp
     src/BmpWriter.cpp
     src/stb_impl.cpp
+    ${d3d12ma_SOURCE_DIR}/src/D3D12MemAlloc.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -53,15 +64,16 @@ add_executable(ImageGridTool WIN32
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
 )
 
-target_include_directories(ImageGridTool PRIVATE
+target_include_directories(gridtool PRIVATE
     src
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
     ${stb_SOURCE_DIR}
     ${stb_resize_SOURCE_DIR}
+    ${d3d12ma_SOURCE_DIR}/include
 )
 
-target_compile_definitions(ImageGridTool PRIVATE
+target_compile_definitions(gridtool PRIVATE
     UNICODE _UNICODE
     NOMINMAX
     WIN32_LEAN_AND_MEAN
@@ -69,11 +81,13 @@ target_compile_definitions(ImageGridTool PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(ImageGridTool PRIVATE /utf-8 /W4 /permissive-)
+    target_compile_options(gridtool PRIVATE /utf-8 /W4 /permissive-)
+    # Third-party source: keep it out of our /W4 warning noise.
+    set_source_files_properties(${d3d12ma_SOURCE_DIR}/src/D3D12MemAlloc.cpp PROPERTIES COMPILE_OPTIONS "/W1")
 endif()
 
-target_link_libraries(ImageGridTool PRIVATE
-    d3d12 dxgi ole32 uuid shell32
+target_link_libraries(gridtool PRIVATE
+    d3d12 dxgi dxguid ole32 uuid shell32
 )
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ImageGridTool)
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT gridtool)
