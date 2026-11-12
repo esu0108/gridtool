@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(gridtool LANGUAGES CXX)
+project(ImageGridTool LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "This project targets Windows (DirectX 12) only.")
@@ -11,11 +11,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
-# Dear ImGui (Win32 + DX12 backends). 1.91.5 uses the classic ImGui_ImplDX12_Init signature.
+# Dear ImGui (Win32 + DX12 backends).
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        v1.91.5
+    GIT_TAG        v1.93.0
     GIT_SHALLOW    TRUE
 )
 
@@ -37,7 +37,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(imgui stb stb_resize)
 
-add_executable(gridtool WIN32
+add_executable(ImageGridTool WIN32
     src/main.cpp
     src/App.cpp
     src/D3D12Context.cpp
@@ -53,7 +53,7 @@ add_executable(gridtool WIN32
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
 )
 
-target_include_directories(gridtool PRIVATE
+target_include_directories(ImageGridTool PRIVATE
     src
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
@@ -61,7 +61,7 @@ target_include_directories(gridtool PRIVATE
     ${stb_resize_SOURCE_DIR}
 )
 
-target_compile_definitions(gridtool PRIVATE
+target_compile_definitions(ImageGridTool PRIVATE
     UNICODE _UNICODE
     NOMINMAX
     WIN32_LEAN_AND_MEAN
@@ -69,11 +69,11 @@ target_compile_definitions(gridtool PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(gridtool PRIVATE /utf-8 /W4 /permissive-)
+    target_compile_options(ImageGridTool PRIVATE /utf-8 /W4 /permissive-)
 endif()
 
-target_link_libraries(gridtool PRIVATE
+target_link_libraries(ImageGridTool PRIVATE
     d3d12 dxgi ole32 uuid shell32
 )
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT gridtool)
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ImageGridTool)

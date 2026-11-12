@@ -18,7 +18,8 @@ struct GpuTexture {
 class D3D12Context {
 public:
     static constexpr UINT kFrameCount = 3;
-    static constexpr UINT kSrvCapacity = 4096;  // slot 0 is reserved for the ImGui font
+    static constexpr UINT kSrvCapacity = 4096;
+    static constexpr UINT kImGuiSrvReserve = 16;  // descriptors kept free for ImGui's own (font atlas) textures
     static constexpr UINT kTexSize = 64;
 
     bool Init(HWND hwnd, UINT width, UINT height);
@@ -34,11 +35,15 @@ public:
     bool CreateTextures(const std::vector<const uint8_t*>& rgba, std::vector<GpuTexture>& out);
 
     ID3D12Device* Device() const { return device_.Get(); }
+    ID3D12CommandQueue* Queue() const { return queue_.Get(); }
     ID3D12DescriptorHeap* SrvHeap() const { return srvHeap_.Get(); }
     DXGI_FORMAT BackBufferFormat() const { return DXGI_FORMAT_R8G8B8A8_UNORM; }
-    UINT FreeSrvSlots() const { return kSrvCapacity - nextSrv_; }
-    D3D12_CPU_DESCRIPTOR_HANDLE FontSrvCpu() const { return srvHeap_->GetCPUDescriptorHandleForHeapStart(); }
-    D3D12_GPU_DESCRIPTOR_HANDLE FontSrvGpu() const { return srvHeap_->GetGPUDescriptorHandleForHeapStart(); }
+    // Number of descriptors still available for user textures (ImGui's reserve excluded).
+    UINT FreeSrvSlots() const;
+
+    // Shader-visible SRV descriptor allocator, shared by our textures and the ImGui DX12 backend.
+    bool AllocSrv(D3D12_CPU_DESCRIPTOR_HANDLE* cpu, D3D12_GPU_DESCRIPTOR_HANDLE* gpu);
+    void FreeSrv(D3D12_CPU_DESCRIPTOR_HANDLE cpu, D3D12_GPU_DESCRIPTOR_HANDLE gpu);
 
 private:
     void CreateRenderTargets();
@@ -64,5 +69,6 @@ private:
     UINT frameIndex_ = 0;
     UINT rtvInc_ = 0;
     UINT srvInc_ = 0;
-    UINT nextSrv_ = 1;
+    UINT nextSrv_ = 0;
+    std::vector<UINT> freeSrv_;
 };

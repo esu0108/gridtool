@@ -222,16 +222,27 @@ bool D3D12Context::CreateTextures(const std::vector<const uint8_t*>& rgba, std::
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
     barriers.reserve(n);
 
-    D3D12_CPU_DESCRIPTOR_HANDLE cpu = srvHeap_->GetCPUDescriptorHandleForHeapStart();
-    D3D12_GPU_DESCRIPTOR_HANDLE gpu = srvHeap_->GetGPUDescriptorHandleForHeapStart();
-    cpu.ptr += SIZE_T(nextSrv_) * srvInc_;
-    gpu.ptr += UINT64(nextSrv_) * srvInc_;
+    std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> cpuHandles;  // for rollback on failure
+    cpuHandles.reserve(n);
+    auto rollback = [&]() {
+        for (size_t k = 0; k < cpuHandles.size(); ++k) FreeSrv(cpuHandles[k], result[k].srv);
+    };
 
     for (UINT i = 0; i < n; ++i) {
         GpuTexture& t = result[i];
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
+        if (!AllocSrv(&cpu, &gpu)) {
+            rollback();
+            return false;
+        }
+        t.srv = gpu;
+        cpuHandles.push_back(cpu);
+
         if (FAILED(device_->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &texDesc,
                                                     D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
                                                     IID_PPV_ARGS(&t.resource)))) {
+            rollback();
             return false;
         }
 
@@ -260,10 +271,6 @@ bool D3D12Context::CreateTextures(const std::vector<const uint8_t*>& rgba, std::
         srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srv.Texture2D.MipLevels = 1;
         device_->CreateShaderResourceView(t.resource.Get(), &srv, cpu);
-        t.srv = gpu;
-
-        cpu.ptr += srvInc_;
-        gpu.ptr += srvInc_;
     }
 
     list->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
@@ -272,7 +279,34 @@ bool D3D12Context::CreateTextures(const std::vector<const uint8_t*>& rgba, std::
     queue_->ExecuteCommandLists(1, lists);
     WaitForGpu();
 
-    nextSrv_ += n;
     out = std::move(result);
     return true;
+}
+
+UINT D3D12Context::FreeSrvSlots() const {
+    const UINT used = nextSrv_ - static_cast<UINT>(freeSrv_.size());
+    const UINT limit = kSrvCapacity - kImGuiSrvReserve;
+    return used >= limit ? 0 : limit - used;
+}
+
+bool D3D12Context::AllocSrv(D3D12_CPU_DESCRIPTOR_HANDLE* cpu, D3D12_GPU_DESCRIPTOR_HANDLE* gpu) {
+    UINT index;
+    if (!freeSrv_.empty()) {
+        index = freeSrv_.back();
+        freeSrv_.pop_back();
+    } else if (nextSrv_ < kSrvCapacity) {
+        index = nextSrv_++;
+    } else {
+        return false;
+    }
+    *cpu = srvHeap_->GetCPUDescriptorHandleForHeapStart();
+    *gpu = srvHeap_->GetGPUDescriptorHandleForHeapStart();
+    cpu->ptr += SIZE_T(index) * srvInc_;
+    gpu->ptr += UINT64(index) * srvInc_;
+    return true;
+}
+
+void D3D12Context::FreeSrv(D3D12_CPU_DESCRIPTOR_HANDLE cpu, D3D12_GPU_DESCRIPTOR_HANDLE) {
+    const SIZE_T start = srvHeap_->GetCPUDescriptorHandleForHeapStart().ptr;
+    freeSrv_.push_back(static_cast<UINT>((cpu.ptr - start) / srvInc_));
 }

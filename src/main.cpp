@@ -43,6 +43,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 // A Japanese-capable system font is required for the UI labels.
+// (Since ImGui 1.92 glyphs are rasterized on demand, so no glyph ranges are needed.
+//  The DPI scale is applied through style.FontScaleDpi.)
 void LoadJapaneseFont(float pixelSize) {
     ImGuiIO& io = ImGui::GetIO();
     const char* candidates[] = {
@@ -52,7 +54,7 @@ void LoadJapaneseFont(float pixelSize) {
     };
     for (const char* path : candidates) {
         if (std::filesystem::exists(path)) {
-            if (io.Fonts->AddFontFromFileTTF(path, pixelSize, nullptr, io.Fonts->GetGlyphRangesJapanese())) return;
+            if (io.Fonts->AddFontFromFileTTF(path, pixelSize)) return;
         }
     }
     io.Fonts->AddFontDefault();
@@ -99,11 +101,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         io.IniFilename = nullptr;
         ImGui::StyleColorsDark();
         ImGui::GetStyle().ScaleAllSizes(scale);
-        LoadJapaneseFont(18.0f * scale);
+        ImGui::GetStyle().FontScaleDpi = scale;
+        LoadJapaneseFont(18.0f);
 
         ImGui_ImplWin32_Init(hwnd);
-        ImGui_ImplDX12_Init(d3d.Device(), static_cast<int>(D3D12Context::kFrameCount), d3d.BackBufferFormat(),
-                            d3d.SrvHeap(), d3d.FontSrvCpu(), d3d.FontSrvGpu());
+
+        ImGui_ImplDX12_InitInfo initInfo;
+        initInfo.Device = d3d.Device();
+        initInfo.CommandQueue = d3d.Queue();
+        initInfo.NumFramesInFlight = static_cast<int>(D3D12Context::kFrameCount);
+        initInfo.RTVFormat = d3d.BackBufferFormat();
+        initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;
+        initInfo.UserData = &d3d;
+        initInfo.SrvDescriptorHeap = d3d.SrvHeap();
+        initInfo.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo* info, D3D12_CPU_DESCRIPTOR_HANDLE* cpu,
+                                           D3D12_GPU_DESCRIPTOR_HANDLE* gpu) {
+            static_cast<D3D12Context*>(info->UserData)->AllocSrv(cpu, gpu);
+        };
+        initInfo.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo* info, D3D12_CPU_DESCRIPTOR_HANDLE cpu,
+                                          D3D12_GPU_DESCRIPTOR_HANDLE gpu) {
+            static_cast<D3D12Context*>(info->UserData)->FreeSrv(cpu, gpu);
+        };
+        ImGui_ImplDX12_Init(&initInfo);
 
         {
             App app(hwnd, d3d, scale);
